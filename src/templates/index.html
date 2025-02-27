@@ -1,0 +1,202 @@
+<html>
+  <head>
+    <title>CAPTCHA Labeling Tool</title>
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" />
+    <link rel="stylesheet" href="https://cdn.rawgit.com/needim/noty/77268c46/lib/noty.css" />
+  </head>
+  <body>
+    <div class="container">
+      <h1 class="mt-5 mb-3">CAPTCHA Labeling Tool</h1>
+
+      <div class="row mb-3">
+        <div class="col-9">
+          <p>
+            This is a tool for labeling captcha images. Place your captcha
+            images in the <code>src/static/img</code> folder, named as 1.jpg,
+            2.jpg, and so on.
+          </p>
+        </div>
+      </div>
+
+      <div class="row mb-3">
+        <div class="col-6">
+          <label for="autoTab">
+            Characters Length (jump next CAPTCHA and save automatically):
+          </label>
+          <select id="autoTab" name="autoTab" class="form-control">
+            <option value="0" selected>Disable</option>
+            <option value="3">3 char</option>
+            <option value="4">4 char</option>
+            <option value="5">5 char</option>
+            <option value="6">6 char</option>
+            <option value="7">7 char</option>
+          </select>
+        </div>
+        <div class="col-3">
+          <label for="allowChars">CAPTCHA RegEx (allowable chars):</label>
+          <input type="text" class="form-control" id="allowChars" name="allowChars" placeholder="0-9a-z" />
+        </div>
+        <div class="col-3">
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="hideLabeled" />
+            <label class="form-check-label" for="hideLabeled">
+              Hide labeled images
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div class="row mb-5">
+        <div class="col-2">
+          <button id="apply" type="button" class="btn btn-lg btn-primary mr-3">
+            Apply
+          </button>
+        </div>
+      </div>
+
+      <div class="row">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>File</th>
+              <th>Image</th>
+              <th>Label</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for filename in files %}
+              <tr class="rowLabel">
+                <td>
+                  <span>{{ filename }}</span>
+                </td>
+                <td>
+                  <img src="{{ url_for('static', filename='img/' + filename) }}" width="100%">
+                </td>
+                <td>
+                  <input type="text" class="form-control">
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="row mb-3">
+        <button id="saveCache" type="button" class="btn btn-lg btn-info mr-3">
+          Save Cache
+        </button>
+      </div>
+    </div>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js"></script>
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.3.1/js/bootstrap.min.js"></script>
+    <script src="https://cdn.rawgit.com/needim/noty/77268c46/lib/noty.min.js"></script>
+    <script type="text/javascript">
+      $(document).ready(function () {
+        let searchParams = new URLSearchParams(window.location.search);
+        let autoTab = searchParams.get("autoTab");
+        let allowChars = searchParams.get("allowChars");
+        let hideLabeled = searchParams.get("hideLabeled") === "true";
+
+        function getQueryString(autoTab, allowChars, hideLabeled) {
+          let query = {};
+          if (autoTab && parseInt(autoTab) != 0) {
+            query["autoTab"] = autoTab;
+          }
+          if (allowChars && allowChars.trim() != "") {
+            query["allowChars"] = allowChars;
+          }
+          if (hideLabeled) {
+            query["hideLabeled"] = hideLabeled;
+          }
+          return new URLSearchParams(query).toString();
+        }
+
+        function loadCache(hideLabeled) {
+          const parsedCache = {{ labels | tojson }};
+          $("tbody tr").each(function () {
+            const no = $(this).find("span").text();
+            const value = parsedCache[no];
+            if (value) {
+              $(this).find("input").val(value);
+              if (hideLabeled) {
+                $(this).hide();
+              }
+            }
+          });
+        }
+
+        function saveCache(showNoty) {
+          cache = {};
+          $("tbody tr").each(function (index) {
+            const no = $(this).find("span").text();
+            const value = $(this).find("input").val();
+            if (value != null && value.trim() != "") {
+              cache[no] = value;
+            }
+          });
+
+          $.post("/save", cache);
+          if (showNoty) {
+            new Noty({
+              type: "success",
+              text: "Save cache successfully",
+              timeout: 3000,
+              theme: "relax",
+            }).show();
+          }
+        }
+
+        async function initialize() {
+          if (autoTab && parseInt(autoTab) != 0) {
+            $("#autoTab").val(autoTab);
+          }
+          if (allowChars != null && allowChars.trim() != "") {
+            $("#allowChars").val(allowChars);
+          }
+          if (hideLabeled) {
+            $("#hideLabeled").prop("checked", true);
+          }
+
+          loadCache(hideLabeled);
+        }
+
+        $("tbody").on("keyup", "input", function (event) {
+          const val = $(event.currentTarget).val();
+          if (allowChars != null && allowChars.trim() != "") {
+            const re = new RegExp("[" + allowChars + "]*");
+            const match = val.match(re);
+            if (match[0] != val) {
+              $(event.currentTarget).val(match[0]);
+              return;
+            }
+          }
+
+          if (autoTab && autoTab != 0) {
+            if (val.length >= autoTab) {
+              const index = $(event.currentTarget).closest("tr").index();
+              $("tbody tr")
+                .eq(index + 1)
+                .find("input")
+                .focus();
+              saveCache();
+            }
+          }
+        });
+
+        $("#apply").click(function () {
+          const autoTab = $("#autoTab").val();
+          const allowChars = $("#allowChars").val();
+          const hideLabeled = $("#hideLabeled").is(":checked");
+          const queryStr = getQueryString(autoTab, allowChars, hideLabeled);
+          window.location.href = "?" + queryStr;
+        });
+
+        $("#saveCache").click(function () {
+          saveCache(true);
+        });
+
+        initialize();
+      });
+    </script>
+  </body>
+</html>
