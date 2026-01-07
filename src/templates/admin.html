@@ -1,0 +1,436 @@
+<html>
+  <head>
+    <title>Admin Review Panel - CAPTCHA Labeling Tool</title>
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" />
+    <link rel="stylesheet" href="https://cdn.rawgit.com/needim/noty/77268c46/lib/noty.css" />
+    <style>
+      .review-sure {
+        background-color: #d4edda;
+        border-left: 4px solid #28a745;
+      }
+      .review-not-sure {
+        background-color: #fff3cd;
+        border-left: 4px solid #ffc107;
+      }
+      .review-pending {
+        background-color: #f8f9fa;
+      }
+      .admin-image-row {
+        transition: background-color 0.2s;
+      }
+      .saving-indicator {
+        display: none;
+        color: #28a745;
+        font-size: 0.9em;
+      }
+      .saving-indicator.active {
+        display: inline;
+      }
+      .review-status-badge {
+        font-size: 0.85em;
+        padding: 4px 8px;
+      }
+      .pagination-controls {
+        margin: 20px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container-fluid">
+      <h1 class="mt-4 mb-3">Admin Review Panel</h1>
+      
+      <div class="row mb-3">
+        <div class="col-12">
+          <div class="alert alert-info">
+            <strong>Instructions:</strong> Review labeled images. Mark as "Sure" if the label is correct, 
+            "Not Sure" if uncertain, and edit values if needed. Click "Save Review" to save changes.
+          </div>
+        </div>
+      </div>
+
+      <div class="row mb-3">
+        <div class="col-12">
+          <div class="d-flex justify-content-between align-items-center">
+            <div>
+              <span id="progressText">Loading...</span>
+              <span class="saving-indicator" id="savingIndicator"> • Saving...</span>
+            </div>
+            <div>
+              <a href="/" class="btn btn-secondary">Back to Labeling</a>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="row mb-3">
+        <div class="col-12">
+          <div class="pagination-controls">
+            <button id="prevPage" class="btn btn-sm btn-outline-primary" disabled>Previous</button>
+            <span class="mx-3">
+              Page <span id="currentPage">1</span> of <span id="totalPages">1</span>
+            </span>
+            <button id="nextPage" class="btn btn-sm btn-outline-primary" disabled>Next</button>
+            <span class="ml-3">
+              <label for="perPageSelect">Items per page:</label>
+              <select id="perPageSelect" class="form-control form-control-sm d-inline-block" style="width: auto;">
+                <option value="25">25</option>
+                <option value="50" selected>50</option>
+                <option value="100">100</option>
+                <option value="200">200</option>
+              </select>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="col-12">
+          <table class="table table-bordered">
+            <thead class="thead-light">
+              <tr>
+                <th style="width: 15%;">Filename</th>
+                <th style="width: 20%;">Image</th>
+                <th style="width: 20%;">Label Value</th>
+                <th style="width: 25%;">Review Status</th>
+                <th style="width: 20%;">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="imagesTableBody">
+              <tr>
+                <td colspan="5" class="text-center">Loading images...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="row mt-3">
+        <div class="col-12">
+          <button id="saveAllReviews" class="btn btn-lg btn-success">
+            Save All Reviews
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js"></script>
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.3.1/js/bootstrap.min.js"></script>
+    <script src="https://cdn.rawgit.com/needim/noty/77268c46/lib/noty.min.js"></script>
+    <script type="text/javascript">
+      $(document).ready(function () {
+        const NULL_MARKER = "__NULL__";
+        let currentPage = 1;
+        let perPage = 50;
+        let totalPages = 1;
+        let currentImages = [];
+        let pendingReviews = {}; // Track unsaved changes
+
+        // Load images on page load
+        loadImages();
+
+        // Pagination handlers
+        $("#prevPage").click(function() {
+          if (currentPage > 1) {
+            currentPage--;
+            loadImages();
+          }
+        });
+
+        $("#nextPage").click(function() {
+          if (currentPage < totalPages) {
+            currentPage++;
+            loadImages();
+          }
+        });
+
+        $("#perPageSelect").change(function() {
+          perPage = parseInt($(this).val());
+          currentPage = 1;
+          loadImages();
+        });
+
+        function loadImages() {
+          $("#imagesTableBody").html('<tr><td colspan="5" class="text-center">Loading images...</td></tr>');
+          
+          $.ajax({
+            url: "/api/admin/images",
+            method: "GET",
+            data: {
+              page: currentPage,
+              per_page: perPage
+            },
+            success: function(response) {
+              if (response.success) {
+                currentImages = response.images;
+                totalPages = response.total_pages;
+                currentPage = response.page;
+                
+                updatePaginationControls();
+                renderImages();
+                updateProgressText(response.total);
+              } else {
+                showError("Failed to load images");
+              }
+            },
+            error: function(xhr, status, error) {
+              let errorMsg = "Error loading images";
+              if (xhr.responseJSON && xhr.responseJSON.message) {
+                errorMsg = xhr.responseJSON.message;
+              } else if (xhr.statusText) {
+                errorMsg = `Error loading images: ${xhr.statusText}`;
+              }
+              console.error("Admin images error:", xhr, status, error);
+              showError(errorMsg);
+            }
+          });
+        }
+
+        function updatePaginationControls() {
+          $("#currentPage").text(currentPage);
+          $("#totalPages").text(totalPages);
+          $("#prevPage").prop("disabled", currentPage <= 1);
+          $("#nextPage").prop("disabled", currentPage >= totalPages);
+        }
+
+        function updateProgressText(total) {
+          $("#progressText").text(`Total labeled images: ${total}`);
+        }
+
+        function renderImages() {
+          const tbody = $("#imagesTableBody");
+          tbody.empty();
+
+          if (currentImages.length === 0) {
+            tbody.html('<tr><td colspan="5" class="text-center">No labeled images found.</td></tr>');
+            return;
+          }
+
+          currentImages.forEach(function(image) {
+            const filename = image.filename;
+            const value = image.value === NULL_MARKER ? "" : image.value;
+            const adminReview = image.admin_review;
+            const status = adminReview ? adminReview.status : null;
+            
+            // Determine row class based on review status
+            let rowClass = "review-pending";
+            if (status === "sure") {
+              rowClass = "review-sure";
+            } else if (status === "not_sure") {
+              rowClass = "review-not-sure";
+            }
+
+            const row = $('<tr>')
+              .addClass('admin-image-row')
+              .addClass(rowClass)
+              .attr('data-filename', filename);
+
+            // Filename
+            row.append($('<td>').text(filename));
+
+            // Image
+            const imgCell = $('<td>');
+            const img = $('<img>')
+              .attr('src', `/static/img/${filename}`)
+              .attr('loading', 'lazy')
+              .css('max-width', '100%')
+              .css('height', 'auto')
+              .on('error', function() {
+                $(this).replaceWith($('<span>').text('Image not found').css('color', '#dc3545'));
+              });
+            imgCell.append(img);
+            row.append(imgCell);
+
+            // Label value input
+            const inputCell = $('<td>');
+            const input = $('<input>')
+              .attr('type', 'text')
+              .addClass('form-control')
+              .addClass('admin-label-input')
+              .attr('data-filename', filename)
+              .val(value);
+            
+            if (value === "" && image.value === NULL_MARKER) {
+              input.css('font-style', 'italic').css('color', '#856404');
+            }
+            
+            inputCell.append(input);
+            row.append(inputCell);
+
+            // Review status
+            const statusCell = $('<td>');
+            if (status) {
+              const badge = $('<span>')
+                .addClass('badge')
+                .addClass(status === 'sure' ? 'badge-success' : 'badge-warning')
+                .addClass('review-status-badge')
+                .text(status === 'sure' ? 'Sure' : 'Not Sure');
+              statusCell.append(badge);
+            } else {
+              statusCell.append($('<span>').text('Not reviewed').css('color', '#6c757d'));
+            }
+            row.append(statusCell);
+
+            // Actions
+            const actionsCell = $('<td>');
+            const btnGroup = $('<div>').addClass('btn-group').attr('role', 'group');
+            
+            const sureBtn = $('<button>')
+              .addClass('btn btn-sm')
+              .addClass(status === 'sure' ? 'btn-success' : 'btn-outline-success')
+              .text('Sure')
+              .attr('data-filename', filename)
+              .attr('data-status', 'sure')
+              .click(function() {
+                setReviewStatus(filename, 'sure', row);
+              });
+            
+            const notSureBtn = $('<button>')
+              .addClass('btn btn-sm')
+              .addClass(status === 'not_sure' ? 'btn-warning' : 'btn-outline-warning')
+              .text('Not Sure')
+              .attr('data-filename', filename)
+              .attr('data-status', 'not_sure')
+              .click(function() {
+                setReviewStatus(filename, 'not_sure', row);
+              });
+            
+            btnGroup.append(sureBtn).append(notSureBtn);
+            actionsCell.append(btnGroup);
+            row.append(actionsCell);
+
+            tbody.append(row);
+          });
+
+          // Handle input changes
+          $(".admin-label-input").on("input", function() {
+            const filename = $(this).data("filename");
+            const newValue = $(this).val();
+            markAsChanged(filename);
+          });
+        }
+
+        function setReviewStatus(filename, status, row) {
+          // Update UI immediately
+          row.removeClass("review-sure review-not-sure review-pending");
+          if (status === "sure") {
+            row.addClass("review-sure");
+          } else if (status === "not_sure") {
+            row.addClass("review-not-sure");
+          }
+
+          // Update buttons
+          const sureBtn = row.find('button[data-status="sure"]');
+          const notSureBtn = row.find('button[data-status="not_sure"]');
+          if (status === "sure") {
+            sureBtn.removeClass("btn-outline-success").addClass("btn-success");
+            notSureBtn.removeClass("btn-warning").addClass("btn-outline-warning");
+          } else {
+            sureBtn.removeClass("btn-success").addClass("btn-outline-success");
+            notSureBtn.removeClass("btn-outline-warning").addClass("btn-warning");
+          }
+
+          // Update status badge
+          const statusCell = row.find("td").eq(3);
+          if (status === "sure") {
+            statusCell.html('<span class="badge badge-success review-status-badge">Sure</span>');
+          } else {
+            statusCell.html('<span class="badge badge-warning review-status-badge">Not Sure</span>');
+          }
+
+          // Track change
+          if (!pendingReviews[filename]) {
+            pendingReviews[filename] = {};
+          }
+          pendingReviews[filename].status = status;
+          markAsChanged(filename);
+        }
+
+        function markAsChanged(filename) {
+          if (!pendingReviews[filename]) {
+            pendingReviews[filename] = {};
+          }
+          const input = $(`.admin-label-input[data-filename="${filename}"]`);
+          pendingReviews[filename].value = input.val();
+        }
+
+        function saveAllReviews() {
+          if (Object.keys(pendingReviews).length === 0) {
+            showInfo("No changes to save");
+            return;
+          }
+
+          const reviews = [];
+          for (const filename in pendingReviews) {
+            const review = pendingReviews[filename];
+            // Only include status if it was explicitly set
+            const reviewData = {
+              filename: filename,
+              value: review.value
+            };
+            if (review.status !== undefined) {
+              reviewData.status = review.status;
+            }
+            reviews.push(reviewData);
+          }
+
+          $("#savingIndicator").addClass("active");
+
+          $.ajax({
+            url: "/api/admin/review",
+            method: "POST",
+            contentType: "application/json",
+            data: JSON.stringify({ reviews: reviews }),
+            success: function(response) {
+              $("#savingIndicator").removeClass("active");
+              if (response.success) {
+                pendingReviews = {};
+                showSuccess("Reviews saved successfully");
+                // Reload to get updated data
+                setTimeout(function() {
+                  loadImages();
+                }, 500);
+              } else {
+                showError(response.message || "Failed to save reviews");
+              }
+            },
+            error: function(xhr) {
+              $("#savingIndicator").removeClass("active");
+              const message = xhr.responseJSON?.message || "Error saving reviews";
+              showError(message);
+            }
+          });
+        }
+
+        $("#saveAllReviews").click(saveAllReviews);
+
+        function showSuccess(message) {
+          new Noty({
+            type: "success",
+            text: message,
+            timeout: 3000,
+            theme: "relax",
+          }).show();
+        }
+
+        function showError(message) {
+          new Noty({
+            type: "error",
+            text: message,
+            timeout: 5000,
+            theme: "relax",
+          }).show();
+        }
+
+        function showInfo(message) {
+          new Noty({
+            type: "info",
+            text: message,
+            timeout: 2000,
+            theme: "relax",
+          }).show();
+        }
+      });
+    </script>
+  </body>
+</html>
+

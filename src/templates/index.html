@@ -1,19 +1,83 @@
 <html>
   <head>
-    <title>CAPTCHA Labeling Tool</title>
+    <title>CAPTCHA Labeling Tool - Multi-User</title>
     <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" />
     <link rel="stylesheet" href="https://cdn.rawgit.com/needim/noty/77268c46/lib/noty.css" />
+    <style>
+      .null-marked {
+        background-color: #fff3cd;
+        border-left: 4px solid #ffc107;
+      }
+      .null-marked input {
+        background-color: #fff3cd;
+        font-style: italic;
+        color: #856404;
+        cursor: not-allowed;
+      }
+      .null-marked input:disabled {
+        opacity: 0.7;
+      }
+      .progress-info {
+        background-color: #e7f3ff;
+        padding: 15px;
+        border-radius: 5px;
+        margin-bottom: 20px;
+      }
+      .bucket-info {
+        font-weight: bold;
+        color: #0066cc;
+      }
+      .saving-indicator {
+        display: none;
+        color: #28a745;
+        font-size: 0.9em;
+      }
+      .saving-indicator.active {
+        display: inline;
+      }
+      .bucket-warning {
+        background-color: #fff3cd;
+        border: 1px solid #ffc107;
+        border-radius: 5px;
+        padding: 15px;
+        margin-bottom: 20px;
+        color: #856404;
+      }
+      .bucket-warning.hidden {
+        display: none;
+      }
+    </style>
   </head>
   <body>
     <div class="container">
-      <h1 class="mt-5 mb-3">CAPTCHA Labeling Tool</h1>
+      <h1 class="mt-5 mb-3">CAPTCHA Labeling Tool - Multi-User</h1>
+
+      <!-- Bucket and Progress Info -->
+      <div class="row mb-3">
+        <div class="col-12">
+          <div class="progress-info">
+            {% if bucket %}
+            <div class="bucket-info">
+              Bucket #{{ bucket.id }} - {{ bucket.images|length }} images assigned to you
+            </div>
+            {% else %}
+            <div class="bucket-info text-warning">
+              No bucket assigned. All images may be completed or no images available.
+            </div>
+            {% endif %}
+            <div class="mt-2">
+              <span id="progressText">Loading progress...</span>
+              <span class="saving-indicator" id="savingIndicator"> • Saving...</span>
+            </div>
+          </div>
+        </div>
+      </div>
 
       <div class="row mb-3">
         <div class="col-9">
           <p>
-            This is a tool for labeling captcha images. Place your captcha
-            images in the <code>src/static/img</code> folder, named as 1.jpg,
-            2.jpg, and so on.
+            This is a multi-user tool for labeling captcha images. Each user is assigned
+            a bucket of images to label. Images are automatically distributed to prevent duplicates.
           </p>
         </div>
       </div>
@@ -54,6 +118,16 @@
         </div>
       </div>
 
+      {% if bucket %}
+      <!-- Bucket completion warning -->
+      <div class="row">
+        <div class="col-12">
+          <div class="bucket-warning hidden" id="bucketWarning">
+            <strong>Warning:</strong> Not all images in this bucket have been labeled or marked as empty. Please complete all images before requesting a new bucket.
+          </div>
+        </div>
+      </div>
+
       <div class="row">
         <table class="table">
           <thead>
@@ -61,41 +135,112 @@
               <th>File</th>
               <th>Image</th>
               <th>Label</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody>
             {% for filename in files %}
-              <tr class="rowLabel">
+              <tr class="rowLabel" data-filename="{{ filename }}">
                 <td>
                   <span>{{ filename }}</span>
                 </td>
                 <td>
-                  <img src="{{ url_for('static', filename='img/' + filename) }}" width="100%">
+                  <img src="{{ url_for('static', filename='img/' + filename) }}" loading="lazy" width="100%">
                 </td>
                 <td>
-                  <input type="text" class="form-control">
+                  <input type="text" class="form-control label-input" data-filename="{{ filename }}">
+                </td>
+                <td>
+                  <button type="button" class="btn btn-sm btn-warning mark-null-btn" data-filename="{{ filename }}">
+                    Mark as Empty
+                  </button>
                 </td>
               </tr>
             {% endfor %}
           </tbody>
         </table>
       </div>
-
-      <div class="row mb-3">
-        <button id="saveCache" type="button" class="btn btn-lg btn-info mr-3">
-          Save Cache
-        </button>
+      {% else %}
+      <div class="row">
+        <div class="col-12">
+          <div class="alert alert-info">
+            <h4>No Images Available</h4>
+            <p>All images have been labeled, or there are no images in the system.</p>
+            <button id="refreshPage" type="button" class="btn btn-primary">Refresh Page</button>
+          </div>
+        </div>
       </div>
+      {% endif %}
+
+      {% if bucket %}
+      <div class="row mb-3 mt-4">
+        <div class="col-12">
+          <button id="requestNewBucket" type="button" class="btn btn-lg btn-success">
+            Request New Bucket
+          </button>
+        </div>
+      </div>
+      {% endif %}
     </div>
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js"></script>
     <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.3.1/js/bootstrap.min.js"></script>
     <script src="https://cdn.rawgit.com/needim/noty/77268c46/lib/noty.min.js"></script>
     <script type="text/javascript">
       $(document).ready(function () {
+        const NULL_MARKER = "__NULL__";
         let searchParams = new URLSearchParams(window.location.search);
         let autoTab = searchParams.get("autoTab");
         let allowChars = searchParams.get("allowChars");
         let hideLabeled = searchParams.get("hideLabeled") === "true";
+        let saveTimeout = null;
+        const AUTO_SAVE_INTERVAL = 2000; // 2 seconds
+
+        // Session persistence using localStorage
+        const SESSION_STORAGE_KEY = 'captcha_session_id';
+        let sessionId = null;
+
+        // Try to restore session from localStorage
+        function restoreSession() {
+          const storedSessionId = localStorage.getItem(SESSION_STORAGE_KEY);
+          if (storedSessionId && storedSessionId.length === 32) {
+            sessionId = storedSessionId;
+            return sessionId;
+          }
+          return null;
+        }
+
+        // Save session to localStorage
+        function saveSession(sessionId) {
+          if (sessionId) {
+            localStorage.setItem(SESSION_STORAGE_KEY, sessionId);
+          }
+        }
+
+        // Get current session ID (from page or localStorage)
+        {% if session_id %}
+        const pageSessionId = {{ session_id | tojson }};
+        if (pageSessionId) {
+          sessionId = pageSessionId;
+          saveSession(sessionId);
+        }
+        {% else %}
+        const restoredSessionId = restoreSession();
+        if (restoredSessionId) {
+          sessionId = restoredSessionId;
+          // Try to restore bucket with this session
+          loadBucketWithSession(sessionId);
+        }
+        {% endif %}
+
+        // Load bucket on page load if not already loaded
+        {% if not bucket %}
+        if (!sessionId) {
+          loadBucket();
+        }
+        {% endif %}
+
+        // Load progress
+        loadProgress();
 
         function getQueryString(autoTab, allowChars, hideLabeled) {
           let query = {};
@@ -114,39 +259,196 @@
         function loadCache(hideLabeled) {
           const parsedCache = {{ labels | tojson }};
           $("tbody tr").each(function () {
-            const no = $(this).find("span").text();
-            const value = parsedCache[no];
+            const filename = $(this).data("filename");
+            const value = parsedCache[filename];
+            const input = $(this).find("input.label-input");
+            
             if (value) {
-              $(this).find("input").val(value);
+              if (value === NULL_MARKER) {
+                input.val("").prop("disabled", true);
+                $(this).addClass("null-marked");
+                $(this).find(".mark-null-btn").text("Marked as Empty").removeClass("btn-warning").addClass("btn-secondary");
+              } else {
+                input.val(value).prop("disabled", false);
+              }
               if (hideLabeled) {
                 $(this).hide();
               }
             }
           });
+          
+          // Check bucket completion after loading cache
+          setTimeout(checkBucketCompletion, 100);
+        }
+
+        function debouncedSave(showNoty) {
+          // Clear existing timeout
+          if (saveTimeout) {
+            clearTimeout(saveTimeout);
+          }
+
+          // Set new timeout
+          saveTimeout = setTimeout(function() {
+            saveCache(showNoty);
+          }, AUTO_SAVE_INTERVAL);
         }
 
         function saveCache(showNoty) {
-          cache = {};
+          if (saveTimeout) {
+            clearTimeout(saveTimeout);
+            saveTimeout = null;
+          }
+
+          let cache = {};
           $("tbody tr").each(function (index) {
-            const no = $(this).find("span").text();
-            const value = $(this).find("input").val();
-            if (value != null && value.trim() != "") {
-              cache[no] = value;
+            const filename = $(this).data("filename");
+            const input = $(this).find("input.label-input");
+            let value = input.val();
+            
+            // Handle null marker
+            if ($(this).hasClass("null-marked")) {
+              value = NULL_MARKER;
+            } else if (value != null && value.trim() != "") {
+              value = value.trim();
+            } else {
+              return; // Skip empty values that aren't marked as null
             }
+            
+            cache[filename] = value;
           });
 
-          $.post("/save", cache);
-          if (showNoty) {
-            new Noty({
-              type: "success",
-              text: "Save cache successfully",
-              timeout: 3000,
-              theme: "relax",
-            }).show();
+          if (Object.keys(cache).length === 0) {
+            if (showNoty) {
+              new Noty({
+                type: "info",
+                text: "No changes to save",
+                timeout: 2000,
+                theme: "relax",
+              }).show();
+            }
+            return;
           }
+
+          $("#savingIndicator").addClass("active");
+
+          // Include session_id in save request
+          if (sessionId) {
+            cache.session_id = sessionId;
+          }
+
+          $.ajax({
+            url: "/api/save",
+            method: "POST",
+            headers: sessionId ? {'X-Session-ID': sessionId} : {},
+            data: cache,
+            success: function(response) {
+              // Save session ID if provided
+              if (response.session_id) {
+                sessionId = response.session_id;
+                saveSession(sessionId);
+              }
+              $("#savingIndicator").removeClass("active");
+              if (response.success) {
+                if (showNoty) {
+                  new Noty({
+                    type: "success",
+                    text: "Saved successfully" + (response.bucket_completed ? " - Bucket completed!" : ""),
+                    timeout: 3000,
+                    theme: "relax",
+                  }).show();
+                }
+                
+                // If bucket completed, offer to get new bucket
+                if (response.bucket_completed) {
+                  setTimeout(function() {
+                    if (confirm("Bucket completed! Would you like to request a new bucket?")) {
+                      loadBucket();
+                    }
+                  }, 1000);
+                }
+                
+                loadProgress();
+              }
+            },
+            error: function(xhr) {
+              $("#savingIndicator").removeClass("active");
+              const message = xhr.responseJSON?.message || "Error saving labels";
+              new Noty({
+                type: "error",
+                text: message,
+                timeout: 5000,
+                theme: "relax",
+              }).show();
+            }
+          });
+        }
+
+        function loadBucket() {
+          loadBucketWithSession(sessionId);
+        }
+
+        function loadBucketWithSession(sessionIdToUse) {
+          const url = sessionIdToUse ? `/api/bucket?session_id=${sessionIdToUse}` : "/api/bucket";
+          $.ajax({
+            url: url,
+            method: "GET",
+            success: function(response) {
+              if (response.success) {
+                // Save session ID if provided
+                if (response.session_id) {
+                  sessionId = response.session_id;
+                  saveSession(sessionId);
+                }
+                // Scroll to top before reloading
+                window.scrollTo(0, 0);
+                // Reload page to show new bucket
+                window.location.reload();
+              } else {
+                // No buckets available
+                new Noty({
+                  type: "info",
+                  text: response.message || "No buckets available",
+                  timeout: 3000,
+                  theme: "relax",
+                }).show();
+              }
+            },
+            error: function() {
+              new Noty({
+                type: "error",
+                text: "Error loading bucket",
+                timeout: 3000,
+                theme: "relax",
+              }).show();
+            }
+          });
+        }
+
+        function loadProgress() {
+          $.ajax({
+            url: "/api/progress",
+            method: "GET",
+            success: function(response) {
+              if (response.success) {
+                const p = response.progress;
+                $("#progressText").text(
+                  `Progress: ${p.labeled_images}/${p.total_images} images labeled ` +
+                  `(${p.progress_percent.toFixed(1)}%) - ` +
+                  `${p.completed_buckets}/${p.total_buckets} buckets completed`
+                );
+              }
+            },
+            error: function() {
+              // Silently fail - progress is not critical
+            }
+          });
         }
 
         async function initialize() {
+          // Scroll to top of page on load
+          window.scrollTo(0, 0);
+          $('html, body').animate({scrollTop: 0}, 0);
+          
           if (autoTab && parseInt(autoTab) != 0) {
             $("#autoTab").val(autoTab);
           }
@@ -158,29 +460,104 @@
           }
 
           loadCache(hideLabeled);
+          
+          // Check bucket completion after loading
+          setTimeout(checkBucketCompletion, 500);
+          
+          // Refresh progress periodically
+          setInterval(loadProgress, 10000); // Every 10 seconds
         }
 
-        $("tbody").on("keyup", "input", function (event) {
-          const val = $(event.currentTarget).val();
+        // Helper function to find next enabled input
+        function findNextEnabledInput(currentRow) {
+          const currentIndex = currentRow.index();
+          const totalRows = $("tbody tr").length;
+          
+          // Start searching from the next row
+          for (let i = currentIndex + 1; i < totalRows; i++) {
+            const row = $("tbody tr").eq(i);
+            const input = row.find("input.label-input");
+            
+            // Skip hidden rows and disabled inputs
+            if (row.is(":visible") && !input.prop("disabled")) {
+              return input;
+            }
+          }
+          
+          // If no enabled input found after current, return null
+          return null;
+        }
+
+        // Mark as null handler
+        $(document).on("click", ".mark-null-btn", function() {
+          const btn = $(this);
+          const row = btn.closest("tr");
+          const input = row.find("input.label-input");
+          
+          if (row.hasClass("null-marked")) {
+            // Unmark - button should always be enabled
+            row.removeClass("null-marked");
+            input.val("").prop("disabled", false);
+            btn.text("Mark as Empty").removeClass("btn-secondary").addClass("btn-warning");
+            // Focus on the input after enabling
+            input.focus();
+            debouncedSave(false);
+          } else {
+            // Mark as null - button should always be enabled
+            row.addClass("null-marked");
+            input.val("").prop("disabled", true);
+            btn.text("Marked as Empty").removeClass("btn-warning").addClass("btn-secondary");
+            debouncedSave(false);
+            
+            // Check bucket completion
+            checkBucketCompletion();
+            
+            // Auto-tab to next enabled input
+            const nextInput = findNextEnabledInput(row);
+            if (nextInput) {
+              nextInput.focus();
+            }
+          }
+        });
+
+        // Input change handler
+        $("tbody").on("keyup change", "input.label-input", function (event) {
+          const row = $(this).closest("tr");
+          const val = $(this).val();
+          
+          // Remove null marking if user types something
+          if (row.hasClass("null-marked") && val.trim() !== "") {
+            row.removeClass("null-marked");
+            const input = row.find("input.label-input");
+            input.prop("disabled", false);
+            row.find(".mark-null-btn").text("Mark as Empty").removeClass("btn-secondary").addClass("btn-warning");
+          }
+          
           if (allowChars != null && allowChars.trim() != "") {
             const re = new RegExp("[" + allowChars + "]*");
             const match = val.match(re);
-            if (match[0] != val) {
-              $(event.currentTarget).val(match[0]);
+            if (match && match[0] != val) {
+              $(this).val(match[0]);
               return;
             }
           }
 
           if (autoTab && autoTab != 0) {
             if (val.length >= autoTab) {
-              const index = $(event.currentTarget).closest("tr").index();
-              $("tbody tr")
-                .eq(index + 1)
-                .find("input")
-                .focus();
-              saveCache();
+              // Find next enabled input (skip disabled/null-marked inputs)
+              const nextInput = findNextEnabledInput(row);
+              if (nextInput) {
+                nextInput.focus();
+              }
+              debouncedSave(false);
             }
+          } else {
+            // Auto-save on change with debouncing
+            debouncedSave(false);
           }
+          
+          // Check bucket completion after change
+          checkBucketCompletion();
         });
 
         $("#apply").click(function () {
@@ -191,8 +568,68 @@
           window.location.href = "?" + queryStr;
         });
 
-        $("#saveCache").click(function () {
-          saveCache(true);
+        // Check bucket completion status
+        function checkBucketCompletion() {
+          if (!$("#bucketWarning").length) return;
+          
+          let allCompleted = true;
+          $("tbody tr").each(function() {
+            const row = $(this);
+            const input = row.find("input.label-input");
+            const val = input.val();
+            
+            // Check if row is visible and not completed
+            if (row.is(":visible")) {
+              // Row is completed if it's null-marked OR has a value
+              if (!row.hasClass("null-marked") && (!val || val.trim() === "")) {
+                allCompleted = false;
+                return false; // break loop
+              }
+            }
+          });
+          
+          // Show/hide warning
+          if (allCompleted) {
+            $("#bucketWarning").addClass("hidden");
+          } else {
+            $("#bucketWarning").removeClass("hidden");
+          }
+        }
+
+        $("#requestNewBucket").click(function() {
+          // Check if bucket is complete
+          let allCompleted = true;
+          $("tbody tr").each(function() {
+            const row = $(this);
+            const input = row.find("input.label-input");
+            const val = input.val();
+            
+            if (row.is(":visible")) {
+              if (!row.hasClass("null-marked") && (!val || val.trim() === "")) {
+                allCompleted = false;
+                return false;
+              }
+            }
+          });
+          
+          if (!allCompleted) {
+            if (!confirm("Warning: Not all images are completed. Are you sure you want to request a new bucket? Your current progress will be saved.")) {
+              return;
+            }
+          } else {
+            if (!confirm("Request a new bucket? Your current progress will be saved first.")) {
+              return;
+            }
+          }
+          
+          saveCache(false);
+          setTimeout(function() {
+            loadBucket();
+          }, 500);
+        });
+
+        $("#refreshPage").click(function() {
+          window.location.reload();
         });
 
         initialize();
