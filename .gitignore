@@ -24,3 +24,7 @@ venv.bak/
 
 # Data
 src/static/labels.json
+
+# Temporary files
+temp/
+results/

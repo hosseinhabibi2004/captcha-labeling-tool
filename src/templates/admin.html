@@ -52,6 +52,10 @@
         <div class="col-12">
           <div class="d-flex justify-content-between align-items-center">
             <div>
+              <label for="siteFilter" class="mr-2"><strong>Filter by Site:</strong></label>
+              <select id="siteFilter" class="form-control d-inline-block" style="width: auto; margin-right: 15px;">
+                <option value="">All Sites</option>
+              </select>
               <span id="progressText">Loading...</span>
               <span class="saving-indicator" id="savingIndicator"> • Saving...</span>
             </div>
@@ -88,16 +92,17 @@
           <table class="table table-bordered">
             <thead class="thead-light">
               <tr>
-                <th style="width: 15%;">Filename</th>
-                <th style="width: 20%;">Image</th>
-                <th style="width: 20%;">Label Value</th>
-                <th style="width: 25%;">Review Status</th>
+                <th style="width: 10%;">Site</th>
+                <th style="width: 12%;">Filename</th>
+                <th style="width: 18%;">Image</th>
+                <th style="width: 18%;">Label Value</th>
+                <th style="width: 22%;">Review Status</th>
                 <th style="width: 20%;">Actions</th>
               </tr>
             </thead>
             <tbody id="imagesTableBody">
               <tr>
-                <td colspan="5" class="text-center">Loading images...</td>
+                <td colspan="6" class="text-center">Loading images...</td>
               </tr>
             </tbody>
           </table>
@@ -124,9 +129,18 @@
         let totalPages = 1;
         let currentImages = [];
         let pendingReviews = {}; // Track unsaved changes
+        let selectedSite = ""; // Empty means all sites
 
-        // Load images on page load
+        // Load sites and images on page load
+        loadSites();
         loadImages();
+        
+        // Site filter change handler
+        $("#siteFilter").change(function() {
+          selectedSite = $(this).val() || "";
+          currentPage = 1;
+          loadImages();
+        });
 
         // Pagination handlers
         $("#prevPage").click(function() {
@@ -149,16 +163,43 @@
           loadImages();
         });
 
+        function loadSites() {
+          $.ajax({
+            url: "/api/sites",
+            method: "GET",
+            success: function(response) {
+              if (response.success) {
+                const select = $("#siteFilter");
+                // Keep "All Sites" option
+                const allSitesOption = select.find('option[value=""]');
+                select.empty().append(allSitesOption);
+                
+                response.sites.forEach(function(site) {
+                  select.append($('<option>').val(site).text(site));
+                });
+              }
+            },
+            error: function() {
+              // Silently fail
+            }
+          });
+        }
+        
         function loadImages() {
-          $("#imagesTableBody").html('<tr><td colspan="5" class="text-center">Loading images...</td></tr>');
+          $("#imagesTableBody").html('<tr><td colspan="6" class="text-center">Loading images...</td></tr>');
+          
+          const requestData = {
+            page: currentPage,
+            per_page: perPage
+          };
+          if (selectedSite) {
+            requestData.site = selectedSite;
+          }
           
           $.ajax({
             url: "/api/admin/images",
             method: "GET",
-            data: {
-              page: currentPage,
-              per_page: perPage
-            },
+            data: requestData,
             success: function(response) {
               if (response.success) {
                 currentImages = response.images;
@@ -201,11 +242,12 @@
           tbody.empty();
 
           if (currentImages.length === 0) {
-            tbody.html('<tr><td colspan="5" class="text-center">No labeled images found.</td></tr>');
+            tbody.html('<tr><td colspan="6" class="text-center">No labeled images found.</td></tr>');
             return;
           }
 
           currentImages.forEach(function(image) {
+            const site = image.site || "";
             const filename = image.filename;
             const value = image.value === NULL_MARKER ? "" : image.value;
             const adminReview = image.admin_review;
@@ -222,7 +264,11 @@
             const row = $('<tr>')
               .addClass('admin-image-row')
               .addClass(rowClass)
-              .attr('data-filename', filename);
+              .attr('data-filename', filename)
+              .attr('data-site', site);
+
+            // Site
+            row.append($('<td>').text(site));
 
             // Filename
             row.append($('<td>').text(filename));
@@ -230,7 +276,7 @@
             // Image
             const imgCell = $('<td>');
             const img = $('<img>')
-              .attr('src', `/static/img/${filename}`)
+              .attr('src', `/results/${site}/img/${filename}`)
               .attr('loading', 'lazy')
               .css('max-width', '100%')
               .css('height', 'auto')
@@ -281,7 +327,7 @@
               .attr('data-filename', filename)
               .attr('data-status', 'sure')
               .click(function() {
-                setReviewStatus(filename, 'sure', row);
+                setReviewStatus(site, filename, 'sure', row);
               });
             
             const notSureBtn = $('<button>')
@@ -291,7 +337,7 @@
               .attr('data-filename', filename)
               .attr('data-status', 'not_sure')
               .click(function() {
-                setReviewStatus(filename, 'not_sure', row);
+                setReviewStatus(site, filename, 'not_sure', row);
               });
             
             btnGroup.append(sureBtn).append(notSureBtn);
@@ -304,12 +350,14 @@
           // Handle input changes
           $(".admin-label-input").on("input", function() {
             const filename = $(this).data("filename");
+            const row = $(this).closest("tr");
+            const site = row.data("site") || "";
             const newValue = $(this).val();
-            markAsChanged(filename);
+            markAsChanged(site, filename);
           });
         }
 
-        function setReviewStatus(filename, status, row) {
+        function setReviewStatus(site, filename, status, row) {
           // Update UI immediately
           row.removeClass("review-sure review-not-sure review-pending");
           if (status === "sure") {
@@ -330,27 +378,29 @@
           }
 
           // Update status badge
-          const statusCell = row.find("td").eq(3);
+          const statusCell = row.find("td").eq(4); // Updated index for site column
           if (status === "sure") {
             statusCell.html('<span class="badge badge-success review-status-badge">Sure</span>');
           } else {
             statusCell.html('<span class="badge badge-warning review-status-badge">Not Sure</span>');
           }
 
-          // Track change
-          if (!pendingReviews[filename]) {
-            pendingReviews[filename] = {};
+          // Track change with site
+          const key = `${site}:${filename}`;
+          if (!pendingReviews[key]) {
+            pendingReviews[key] = { site: site, filename: filename };
           }
-          pendingReviews[filename].status = status;
-          markAsChanged(filename);
+          pendingReviews[key].status = status;
+          markAsChanged(site, filename);
         }
 
-        function markAsChanged(filename) {
-          if (!pendingReviews[filename]) {
-            pendingReviews[filename] = {};
+        function markAsChanged(site, filename) {
+          const key = `${site}:${filename}`;
+          if (!pendingReviews[key]) {
+            pendingReviews[key] = { site: site, filename: filename };
           }
           const input = $(`.admin-label-input[data-filename="${filename}"]`);
-          pendingReviews[filename].value = input.val();
+          pendingReviews[key].value = input.val();
         }
 
         function saveAllReviews() {
@@ -360,11 +410,12 @@
           }
 
           const reviews = [];
-          for (const filename in pendingReviews) {
-            const review = pendingReviews[filename];
+          for (const key in pendingReviews) {
+            const review = pendingReviews[key];
             // Only include status if it was explicitly set
             const reviewData = {
-              filename: filename,
+              site: review.site,
+              filename: review.filename,
               value: review.value
             };
             if (review.status !== undefined) {

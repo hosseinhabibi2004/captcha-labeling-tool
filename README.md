@@ -2,19 +2,20 @@
 
 ![Example](example.png)
 
-A Flask-based web application for labeling CAPTCHA images. This tool allows users to view CAPTCHA images, enter their corresponding labels, and save the labels to a JSON file.
+A Flask-based web application for labeling CAPTCHA images. This tool supports **multiple sites**: each site has its own folder with images and labels. Users select a site, view that site's captchas, and labels are saved per site.
 
 ## Features
 
-- View CAPTCHA images stored in the `src/static/img` directory.
-- Label the images and save the labels to a JSON file (`src/static/labels.json`).
-- Automatically jump to the next CAPTCHA after entering a label (optional).
-- Filter allowable characters using a regular expression.
-- Hide labeled images for easier navigation.
+- **Multi-site support** – Organize captchas by site; each site has its own `img/` and `labels.json`.
+- **Site selector** – Choose a site to label only that site's images.
+- **Bucket-based distribution** – Multi-user labeling with buckets assigned per session per site.
+- **Auto-save** – Labels are saved automatically (with optional manual Save Cache).
+- **Auto-Tab** – Optionally jump to the next CAPTCHA after entering a label.
+- **Allowable characters** – Restrict input with a regular expression (e.g. `0-9a-z`).
+- **Hide labeled images** – Option to hide already-labeled rows.
+- **Admin review panel** – Review and mark labels as "Sure" or "Not Sure", with optional site filter.
 
 ## Setup
-
-Follow these steps to set up and run the CAPTCHA Labeling Tool on your local machine.
 
 ### Installation
 
@@ -27,19 +28,28 @@ Follow these steps to set up and run the CAPTCHA Labeling Tool on your local mac
 
 2. **Install dependencies:**
 
-   Install the required Python packages using `pip`:
-
     ```bash
     pip install -r requirements.txt
     ```
 
-3. **Add CAPTCHA images:**
+3. **Create results folders (one per site):**
 
-   Place your CAPTCHA images in the `src/static/img` directory. Ensure the images are named appropriately (e.g., `captcha_sample_1.jpg`, `captcha_sample_2.jpg`, etc.).
+   Create a base directory (default: `results/` in the project root). Each **site** is a subfolder containing an `img/` directory and (after labeling) a `labels.json` file. Example:
+
+    ```txt
+    results/
+    ├── site_a/
+    │   └── img/
+    │       ├── captcha_1.jpg
+    │       └── captcha_2.jpg
+    └── site_b/
+        └── img/
+            └── ...
+    ```
+
+   You can override the base directory with the `RESULTS_BASE_DIR` environment variable.
 
 4. **Run the Flask app:**
-
-   Navigate to the `src` directory and start the Flask development server:
 
     ```bash
     cd src
@@ -48,61 +58,68 @@ Follow these steps to set up and run the CAPTCHA Labeling Tool on your local mac
 
    The app will be available at `http://127.0.0.1:5000/`.
 
+### Environment variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `RESULTS_BASE_DIR` | `../results` (relative to `src/`) | Base directory for site folders. |
+| `BUCKET_SIZE` | `20` | Number of images per bucket. |
+
 ## Usage
 
-1. Open your web browser and navigate to `http://127.0.0.1:5000/`.
-2. You will see a list of CAPTCHA images displayed in a table.
-3. Enter the corresponding label for each image in the input field below it.
-4. Use the following features to enhance your labeling experience:
-   - **Auto-Tab**: Select the number of characters in the CAPTCHA to automatically jump to the next image after entering the label and save them automatically.
-   - **Allowable Characters**: Specify a regular expression (e.g., `0-9a-z`) to restrict input to specific characters.
-   - **Hide Labeled Images**: Check the box to hide images that already have labels.
-5. Click `Save Cache` to save the labels to `src/static/labels.json`.
+1. Open `http://127.0.0.1:5000/`.
+2. **Select a site** from the dropdown. The page loads that site's bucket of images.
+3. Enter the label for each CAPTCHA in the input field (or use "Mark as Empty" for unreadable images).
+4. Labels auto-save; you can also click **Save Cache** to force save.
+5. Use **Request New Bucket** to get another set of images for the same site when the current bucket is done.
+6. Optional: **Auto-Tab**, **Allowable Characters**, and **Hide labeled images** in the options area.
 
-## File Structure
+### Admin panel
 
-The project has the following structure:
+- Open `http://127.0.0.1:5000/admin` to review labeled images.
+- Use **Filter by Site** to show one site or "All Sites".
+- Mark each label as **Sure** or **Not Sure** and click **Save All Reviews**.
 
-```
+## File structure
+
+### Project layout
+
+```txt
 captcha-labeling-tool/
-├── LICENSE                  # License file
-├── README.md                # Project documentation
-├── requirements.txt         # Python dependencies
-└── src/                     # Source code directory
-    ├── app.py               # Main Flask application
-    ├── static/              # Static files
-    │   ├── img/             # Directory for CAPTCHA images
-    │   └── labels.json      # JSON file to store labels
-    └── templates/           # HTML templates
-        └── index.html       # Main HTML template
+├── LICENSE
+├── README.md
+├── requirements.txt
+├── results/                 # Base dir for sites (configurable)
+│   ├── site_a/
+│   │   ├── img/             # CAPTCHA images for this site
+│   │   ├── labels.json      # Labels for this site
+│   │   └── buckets.json     # Bucket state (auto-created)
+│   └── site_b/
+│       ├── img/
+│       └── labels.json
+└── src/
+    ├── app.py               # Flask app and API
+    ├── bucket_manager.py    # Per-site bucket logic
+    ├── file_lock.py        # Safe JSON read/write
+    ├── sites.py             # Site discovery and paths
+    └── templates/
+        ├── index.html       # Labeling UI
+        └── admin.html       # Admin review UI
 ```
 
-## Example
+### Labels format (per site)
 
-### Adding CAPTCHA Images
-
-Place your CAPTCHA images in the `src/static/img` directory. For example:
-
-```
-src/
-└── static/
-    └── img/
-        ├── captcha_sample_1.jpg
-        ├── captcha_sample_2.jpg
-        └── captcha_sample_3.jpg
-```
-
-### Saving Labels
-
-After entering labels for the images, click `Save Cache`. The labels will be saved in `src/static/labels.json` in the following format:
+Each site's `labels.json` is a flat map of filename to value (or to an object with `value` and optional `admin_review`):
 
 ```json
 {
-  "captcha_sample_1.jpg": "p7xgy",
-  "captcha_sample_2.jpg": "6c3fn",
-  "captcha_sample_3.jpg": "883pm"
+  "captcha_1.jpg": "p7xgy",
+  "captcha_2.jpg": "6c3fn",
+  "captcha_3.jpg": "__NULL__"
 }
 ```
+
+Values are either a string (the label or `"__NULL__"` for empty) or an object like `{"value": "p7xgy", "admin_review": {"status": "sure"}}`.
 
 ## Contributing
 

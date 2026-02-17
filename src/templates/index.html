@@ -1,8 +1,14 @@
 <html>
   <head>
     <title>CAPTCHA Labeling Tool - Multi-User</title>
-    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" />
-    <link rel="stylesheet" href="https://cdn.rawgit.com/needim/noty/77268c46/lib/noty.css" />
+    <link
+      rel="stylesheet"
+      href="https://maxcdn.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdn.rawgit.com/needim/noty/77268c46/lib/noty.css"
+    />
     <style>
       .null-marked {
         background-color: #fff3cd;
@@ -52,22 +58,44 @@
     <div class="container">
       <h1 class="mt-5 mb-3">CAPTCHA Labeling Tool - Multi-User</h1>
 
+      <!-- Site Selector -->
+      <div class="row mb-3">
+        <div class="col-12">
+          <label for="siteSelect"><strong>Select Site:</strong></label>
+          <select id="siteSelect" class="form-control" style="max-width: 300px">
+            {% if sites %}
+            {% for site in sites %}
+            <option value="{{ site }}" {% if current_site == site %}selected{% endif %}>
+              {{ site }}
+            </option>
+            {% endfor %}
+            {% else %}
+            <option value="">No sites available</option>
+            {% endif %}
+          </select>
+        </div>
+      </div>
+
       <!-- Bucket and Progress Info -->
       <div class="row mb-3">
         <div class="col-12">
           <div class="progress-info">
             {% if bucket %}
             <div class="bucket-info">
-              Bucket #{{ bucket.id }} - {{ bucket.images|length }} images assigned to you
+              Bucket #{{ bucket.id }} - {{ bucket.images|length }} images
+              assigned to you
             </div>
             {% else %}
             <div class="bucket-info text-warning">
-              No bucket assigned. All images may be completed or no images available.
+              No bucket assigned. All images may be completed or no images
+              available.
             </div>
             {% endif %}
             <div class="mt-2">
               <span id="progressText">Loading progress...</span>
-              <span class="saving-indicator" id="savingIndicator"> • Saving...</span>
+              <span class="saving-indicator" id="savingIndicator">
+                • Saving...</span
+              >
             </div>
           </div>
         </div>
@@ -76,8 +104,9 @@
       <div class="row mb-3">
         <div class="col-9">
           <p>
-            This is a multi-user tool for labeling captcha images. Each user is assigned
-            a bucket of images to label. Images are automatically distributed to prevent duplicates.
+            This is a multi-user tool for labeling captcha images. Each user is
+            assigned a bucket of images to label. Images are automatically
+            distributed to prevent duplicates.
           </p>
         </div>
       </div>
@@ -98,7 +127,13 @@
         </div>
         <div class="col-3">
           <label for="allowChars">CAPTCHA RegEx (allowable chars):</label>
-          <input type="text" class="form-control" id="allowChars" name="allowChars" placeholder="0-9a-z" />
+          <input
+            type="text"
+            class="form-control"
+            id="allowChars"
+            name="allowChars"
+            placeholder="0-9a-z"
+          />
         </div>
         <div class="col-3">
           <div class="form-check">
@@ -123,7 +158,9 @@
       <div class="row">
         <div class="col-12">
           <div class="bucket-warning hidden" id="bucketWarning">
-            <strong>Warning:</strong> Not all images in this bucket have been labeled or marked as empty. Please complete all images before requesting a new bucket.
+            <strong>Warning:</strong> Not all images in this bucket have been
+            labeled or marked as empty. Please complete all images before
+            requesting a new bucket.
           </div>
         </div>
       </div>
@@ -140,22 +177,34 @@
           </thead>
           <tbody>
             {% for filename in files %}
-              <tr class="rowLabel" data-filename="{{ filename }}">
-                <td>
-                  <span>{{ filename }}</span>
-                </td>
-                <td>
-                  <img src="{{ url_for('static', filename='img/' + filename) }}" loading="lazy" width="100%">
-                </td>
-                <td>
-                  <input type="text" class="form-control label-input" data-filename="{{ filename }}">
-                </td>
-                <td>
-                  <button type="button" class="btn btn-sm btn-warning mark-null-btn" data-filename="{{ filename }}">
-                    Mark as Empty
-                  </button>
-                </td>
-              </tr>
+            <tr class="rowLabel" data-filename="{{ filename }}">
+              <td>
+                <span>{{ filename }}</span>
+              </td>
+              <td>
+                <img
+                  src="/results/{{ current_site }}/img/{{ filename }}"
+                  loading="lazy"
+                  width="100%"
+                />
+              </td>
+              <td>
+                <input
+                  type="text"
+                  class="form-control label-input"
+                  data-filename="{{ filename }}"
+                />
+              </td>
+              <td>
+                <button
+                  type="button"
+                  class="btn btn-sm btn-warning mark-null-btn"
+                  data-filename="{{ filename }}"
+                >
+                  Mark as Empty
+                </button>
+              </td>
+            </tr>
             {% endfor %}
           </tbody>
         </table>
@@ -165,17 +214,24 @@
         <div class="col-12">
           <div class="alert alert-info">
             <h4>No Images Available</h4>
-            <p>All images have been labeled, or there are no images in the system.</p>
-            <button id="refreshPage" type="button" class="btn btn-primary">Refresh Page</button>
+            <p>
+              All images have been labeled, or there are no images in the
+              system.
+            </p>
+            <button id="refreshPage" type="button" class="btn btn-primary">
+              Refresh Page
+            </button>
           </div>
         </div>
       </div>
-      {% endif %}
-
-      {% if bucket %}
+      {% endif %} {% if bucket %}
       <div class="row mb-3 mt-4">
         <div class="col-12">
-          <button id="requestNewBucket" type="button" class="btn btn-lg btn-success">
+          <button
+            id="requestNewBucket"
+            type="button"
+            class="btn btn-lg btn-success"
+          >
             Request New Bucket
           </button>
         </div>
@@ -195,9 +251,23 @@
         let saveTimeout = null;
         const AUTO_SAVE_INTERVAL = 2000; // 2 seconds
 
+        // Get current site from URL or selector
+        let currentSite = searchParams.get("site") || $("#siteSelect").val();
+
         // Session persistence using localStorage
         const SESSION_STORAGE_KEY = 'captcha_session_id';
         let sessionId = null;
+
+        // Site selector change handler
+        $("#siteSelect").change(function() {
+          const selectedSite = $(this).val();
+          if (selectedSite) {
+            // Update URL with site parameter
+            const newUrl = new URL(window.location.href);
+            newUrl.searchParams.set('site', selectedSite);
+            window.location.href = newUrl.toString();
+          }
+        });
 
         // Try to restore session from localStorage
         function restoreSession() {
@@ -239,21 +309,40 @@
         }
         {% endif %}
 
-        // Load progress
-        loadProgress();
+        // Load sites and progress
+        {% if not sites %}
+        loadSites();
+        {% endif %}
+        if (currentSite) {
+          loadProgress();
+        }
 
         function getQueryString(autoTab, allowChars, hideLabeled) {
-          let query = {};
+          // Start from existing URL params so we preserve site, session_id, etc.
+          const params = new URLSearchParams(window.location.search);
+
+          // autoTab
           if (autoTab && parseInt(autoTab) != 0) {
-            query["autoTab"] = autoTab;
+            params.set("autoTab", autoTab);
+          } else {
+            params.delete("autoTab");
           }
+
+          // allowChars
           if (allowChars && allowChars.trim() != "") {
-            query["allowChars"] = allowChars;
+            params.set("allowChars", allowChars.trim());
+          } else {
+            params.delete("allowChars");
           }
+
+          // hideLabeled
           if (hideLabeled) {
-            query["hideLabeled"] = hideLabeled;
+            params.set("hideLabeled", "true");
+          } else {
+            params.delete("hideLabeled");
           }
-          return new URLSearchParams(query).toString();
+
+          return params.toString();
         }
 
         function loadCache(hideLabeled) {
@@ -262,7 +351,7 @@
             const filename = $(this).data("filename");
             const value = parsedCache[filename];
             const input = $(this).find("input.label-input");
-            
+
             if (value) {
               if (value === NULL_MARKER) {
                 input.val("").prop("disabled", true);
@@ -276,7 +365,7 @@
               }
             }
           });
-          
+
           // Check bucket completion after loading cache
           setTimeout(checkBucketCompletion, 100);
         }
@@ -304,7 +393,7 @@
             const filename = $(this).data("filename");
             const input = $(this).find("input.label-input");
             let value = input.val();
-            
+
             // Handle null marker
             if ($(this).hasClass("null-marked")) {
               value = NULL_MARKER;
@@ -313,7 +402,7 @@
             } else {
               return; // Skip empty values that aren't marked as null
             }
-            
+
             cache[filename] = value;
           });
 
@@ -331,10 +420,11 @@
 
           $("#savingIndicator").addClass("active");
 
-          // Include session_id in save request
+          // Include session_id and site in save request
           if (sessionId) {
             cache.session_id = sessionId;
           }
+          cache.site = currentSite;
 
           $.ajax({
             url: "/api/save",
@@ -357,7 +447,7 @@
                     theme: "relax",
                   }).show();
                 }
-                
+
                 // If bucket completed, offer to get new bucket
                 if (response.bucket_completed) {
                   setTimeout(function() {
@@ -366,7 +456,7 @@
                     }
                   }, 1000);
                 }
-                
+
                 loadProgress();
               }
             },
@@ -388,7 +478,16 @@
         }
 
         function loadBucketWithSession(sessionIdToUse) {
-          const url = sessionIdToUse ? `/api/bucket?session_id=${sessionIdToUse}` : "/api/bucket";
+          if (!currentSite) {
+            new Noty({
+              type: "error",
+              text: "Please select a site first",
+              timeout: 3000,
+              theme: "relax",
+            }).show();
+            return;
+          }
+          const url = sessionIdToUse ? `/api/bucket?session_id=${sessionIdToUse}&site=${currentSite}` : `/api/bucket?site=${currentSite}`;
           $.ajax({
             url: url,
             method: "GET",
@@ -399,10 +498,13 @@
                   sessionId = response.session_id;
                   saveSession(sessionId);
                 }
-                // Scroll to top before reloading
-                window.scrollTo(0, 0);
-                // Reload page to show new bucket
-                window.location.reload();
+                // Redirect to same page with site and session_id so server renders the bucket (avoids reload loop when cookie not set)
+                const url = new URL(window.location.href);
+                url.searchParams.set("site", currentSite);
+                if (response.session_id) {
+                  url.searchParams.set("session_id", response.session_id);
+                }
+                window.location.href = url.toString();
               } else {
                 // No buckets available
                 new Noty({
@@ -425,8 +527,12 @@
         }
 
         function loadProgress() {
+          if (!currentSite) {
+            $("#progressText").text("Select a site to see progress");
+            return;
+          }
           $.ajax({
-            url: "/api/progress",
+            url: `/api/progress?site=${currentSite}`,
             method: "GET",
             success: function(response) {
               if (response.success) {
@@ -444,11 +550,43 @@
           });
         }
 
+        // Load sites list on page load
+        function loadSites() {
+          $.ajax({
+            url: "/api/sites",
+            method: "GET",
+            success: function(response) {
+              if (response.success && response.sites.length > 0) {
+                const select = $("#siteSelect");
+                select.empty();
+                response.sites.forEach(function(site) {
+                  const option = $('<option>').val(site).text(site);
+                  if (site === currentSite) {
+                    option.prop('selected', true);
+                  }
+                  select.append(option);
+                });
+
+                // If no site selected but sites available, select first one
+                if (!currentSite && response.sites.length > 0) {
+                  currentSite = response.sites[0];
+                  const newUrl = new URL(window.location.href);
+                  newUrl.searchParams.set('site', currentSite);
+                  window.location.href = newUrl.toString();
+                }
+              }
+            },
+            error: function() {
+              // Silently fail
+            }
+          });
+        }
+
         async function initialize() {
           // Scroll to top of page on load
           window.scrollTo(0, 0);
           $('html, body').animate({scrollTop: 0}, 0);
-          
+
           if (autoTab && parseInt(autoTab) != 0) {
             $("#autoTab").val(autoTab);
           }
@@ -460,10 +598,10 @@
           }
 
           loadCache(hideLabeled);
-          
+
           // Check bucket completion after loading
           setTimeout(checkBucketCompletion, 500);
-          
+
           // Refresh progress periodically
           setInterval(loadProgress, 10000); // Every 10 seconds
         }
@@ -472,18 +610,18 @@
         function findNextEnabledInput(currentRow) {
           const currentIndex = currentRow.index();
           const totalRows = $("tbody tr").length;
-          
+
           // Start searching from the next row
           for (let i = currentIndex + 1; i < totalRows; i++) {
             const row = $("tbody tr").eq(i);
             const input = row.find("input.label-input");
-            
+
             // Skip hidden rows and disabled inputs
             if (row.is(":visible") && !input.prop("disabled")) {
               return input;
             }
           }
-          
+
           // If no enabled input found after current, return null
           return null;
         }
@@ -493,7 +631,7 @@
           const btn = $(this);
           const row = btn.closest("tr");
           const input = row.find("input.label-input");
-          
+
           if (row.hasClass("null-marked")) {
             // Unmark - button should always be enabled
             row.removeClass("null-marked");
@@ -508,10 +646,10 @@
             input.val("").prop("disabled", true);
             btn.text("Marked as Empty").removeClass("btn-warning").addClass("btn-secondary");
             debouncedSave(false);
-            
+
             // Check bucket completion
             checkBucketCompletion();
-            
+
             // Auto-tab to next enabled input
             const nextInput = findNextEnabledInput(row);
             if (nextInput) {
@@ -524,7 +662,7 @@
         $("tbody").on("keyup change", "input.label-input", function (event) {
           const row = $(this).closest("tr");
           const val = $(this).val();
-          
+
           // Remove null marking if user types something
           if (row.hasClass("null-marked") && val.trim() !== "") {
             row.removeClass("null-marked");
@@ -532,7 +670,7 @@
             input.prop("disabled", false);
             row.find(".mark-null-btn").text("Mark as Empty").removeClass("btn-secondary").addClass("btn-warning");
           }
-          
+
           if (allowChars != null && allowChars.trim() != "") {
             const re = new RegExp("[" + allowChars + "]*");
             const match = val.match(re);
@@ -555,7 +693,7 @@
             // Auto-save on change with debouncing
             debouncedSave(false);
           }
-          
+
           // Check bucket completion after change
           checkBucketCompletion();
         });
@@ -571,13 +709,13 @@
         // Check bucket completion status
         function checkBucketCompletion() {
           if (!$("#bucketWarning").length) return;
-          
+
           let allCompleted = true;
           $("tbody tr").each(function() {
             const row = $(this);
             const input = row.find("input.label-input");
             const val = input.val();
-            
+
             // Check if row is visible and not completed
             if (row.is(":visible")) {
               // Row is completed if it's null-marked OR has a value
@@ -587,7 +725,7 @@
               }
             }
           });
-          
+
           // Show/hide warning
           if (allCompleted) {
             $("#bucketWarning").addClass("hidden");
@@ -603,7 +741,7 @@
             const row = $(this);
             const input = row.find("input.label-input");
             const val = input.val();
-            
+
             if (row.is(":visible")) {
               if (!row.hasClass("null-marked") && (!val || val.trim() === "")) {
                 allCompleted = false;
@@ -611,7 +749,7 @@
               }
             }
           });
-          
+
           if (!allCompleted) {
             if (!confirm("Warning: Not all images are completed. Are you sure you want to request a new bucket? Your current progress will be saved.")) {
               return;
@@ -621,7 +759,7 @@
               return;
             }
           }
-          
+
           saveCache(false);
           setTimeout(function() {
             loadBucket();
