@@ -37,7 +37,23 @@
   </head>
   <body>
     <div class="container-fluid">
-      <h1 class="mt-4 mb-3">Admin Review Panel</h1>
+      <div class="row mb-3">
+        <div class="col-8">
+          <h1 class="mt-4 mb-3">Admin Review Panel</h1>
+        </div>
+        <div class="col-4 text-right mt-4">
+          {% if username %}
+          <div>
+            <span class="mr-3">Logged in as: <strong>{{ username }}</strong></span>
+            <button id="logoutBtn" class="btn btn-sm btn-outline-secondary">Logout</button>
+          </div>
+          {% else %}
+          <div>
+            <a href="/login?next=/admin" class="btn btn-sm btn-primary">Login</a>
+          </div>
+          {% endif %}
+        </div>
+      </div>
       
       <div class="row mb-3">
         <div class="col-12">
@@ -56,7 +72,13 @@
               <select id="siteFilter" class="form-control d-inline-block" style="width: auto; margin-right: 15px;">
                 <option value="">All Sites</option>
               </select>
-              <span id="progressText">Loading...</span>
+              <div class="form-check d-inline-block ml-3">
+                <input class="form-check-input" type="checkbox" id="hideReviewed" />
+                <label class="form-check-label" for="hideReviewed">
+                  Hide Reviewed Items
+                </label>
+              </div>
+              <span id="progressText" class="ml-3">Loading...</span>
               <span class="saving-indicator" id="savingIndicator"> • Saving...</span>
             </div>
             <div>
@@ -71,7 +93,16 @@
           <div class="pagination-controls">
             <button id="prevPage" class="btn btn-sm btn-outline-primary" disabled>Previous</button>
             <span class="mx-3">
-              Page <span id="currentPage">1</span> of <span id="totalPages">1</span>
+              Page 
+              <input 
+                type="number" 
+                id="pageInput" 
+                class="form-control form-control-sm d-inline-block" 
+                style="width: 60px; text-align: center;"
+                min="1" 
+                value="1"
+              />
+              of <span id="totalPages">1</span>
             </span>
             <button id="nextPage" class="btn btn-sm btn-outline-primary" disabled>Next</button>
             <span class="ml-3">
@@ -92,17 +123,19 @@
           <table class="table table-bordered">
             <thead class="thead-light">
               <tr>
-                <th style="width: 10%;">Site</th>
-                <th style="width: 12%;">Filename</th>
-                <th style="width: 18%;">Image</th>
-                <th style="width: 18%;">Label Value</th>
-                <th style="width: 22%;">Review Status</th>
-                <th style="width: 20%;">Actions</th>
+                <th style="width: 8%;">Site</th>
+                <th style="width: 10%;">Filename</th>
+                <th style="width: 15%;">Image</th>
+                <th style="width: 15%;">Label Value</th>
+                <th style="width: 12%;">Labeled By</th>
+                <th style="width: 15%;">Review Status</th>
+                <th style="width: 15%;">Reviewed By</th>
+                <th style="width: 10%;">Actions</th>
               </tr>
             </thead>
             <tbody id="imagesTableBody">
               <tr>
-                <td colspan="6" class="text-center">Loading images...</td>
+                <td colspan="8" class="text-center">Loading images...</td>
               </tr>
             </tbody>
           </table>
@@ -116,6 +149,74 @@
           </button>
         </div>
       </div>
+
+      <!-- User Management Section -->
+      {% if username %}
+      <div class="row mt-5">
+        <div class="col-12">
+          <h2>User Management</h2>
+          <div class="card">
+            <div class="card-body">
+              <div class="row mb-3">
+                <div class="col-12">
+                  <h5>Add/Edit User</h5>
+                  <form id="userForm" class="form-inline">
+                    <div class="form-group mr-2">
+                      <input
+                        type="text"
+                        class="form-control"
+                        id="userUsername"
+                        placeholder="Username"
+                        required
+                      />
+                    </div>
+                    <div class="form-group mr-2">
+                      <input
+                        type="password"
+                        class="form-control"
+                        id="userPassword"
+                        placeholder="Password (leave blank to keep existing)"
+                      />
+                    </div>
+                    <div class="form-check mr-2">
+                      <input
+                        class="form-check-input"
+                        type="checkbox"
+                        id="userIsAdmin"
+                      />
+                      <label class="form-check-label" for="userIsAdmin">
+                        Admin
+                      </label>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Save User</button>
+                    <button type="button" class="btn btn-secondary ml-2" id="cancelEditBtn" style="display: none;">Cancel</button>
+                  </form>
+                </div>
+              </div>
+              <div class="row">
+                <div class="col-12">
+                  <h5>Users</h5>
+                  <table class="table table-bordered">
+                    <thead>
+                      <tr>
+                        <th>Username</th>
+                        <th>Admin</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody id="usersTableBody">
+                      <tr>
+                        <td colspan="3" class="text-center">Loading users...</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      {% endif %}
     </div>
 
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js"></script>
@@ -130,6 +231,7 @@
         let currentImages = [];
         let pendingReviews = {}; // Track unsaved changes
         let selectedSite = ""; // Empty means all sites
+        let hideReviewed = false;
 
         // Load sites and images on page load
         loadSites();
@@ -138,6 +240,13 @@
         // Site filter change handler
         $("#siteFilter").change(function() {
           selectedSite = $(this).val() || "";
+          currentPage = 1;
+          loadImages();
+        });
+
+        // Hide reviewed filter handler
+        $("#hideReviewed").change(function() {
+          hideReviewed = $(this).is(':checked');
           currentPage = 1;
           loadImages();
         });
@@ -163,6 +272,33 @@
           loadImages();
         });
 
+        // Page input handler
+        $("#pageInput").on('keypress', function(e) {
+          if (e.which === 13) { // Enter key
+            e.preventDefault();
+            const pageNum = parseInt($(this).val());
+            if (pageNum >= 1 && pageNum <= totalPages) {
+              currentPage = pageNum;
+              loadImages();
+            } else {
+              $(this).val(currentPage); // Reset to current page if invalid
+            }
+          }
+        });
+
+        // Update page input when page changes externally
+        $("#pageInput").on('blur', function() {
+          const pageNum = parseInt($(this).val());
+          if (pageNum >= 1 && pageNum <= totalPages) {
+            if (pageNum !== currentPage) {
+              currentPage = pageNum;
+              loadImages();
+            }
+          } else {
+            $(this).val(currentPage); // Reset to current page if invalid
+          }
+        });
+
         function loadSites() {
           $.ajax({
             url: "/api/sites",
@@ -186,7 +322,7 @@
         }
         
         function loadImages() {
-          $("#imagesTableBody").html('<tr><td colspan="6" class="text-center">Loading images...</td></tr>');
+          $("#imagesTableBody").html('<tr><td colspan="8" class="text-center">Loading images...</td></tr>');
           
           const requestData = {
             page: currentPage,
@@ -194,6 +330,9 @@
           };
           if (selectedSite) {
             requestData.site = selectedSite;
+          }
+          if (hideReviewed) {
+            requestData.hide_reviewed = "true";
           }
           
           $.ajax({
@@ -229,6 +368,7 @@
         function updatePaginationControls() {
           $("#currentPage").text(currentPage);
           $("#totalPages").text(totalPages);
+          $("#pageInput").val(currentPage).attr("max", totalPages);
           $("#prevPage").prop("disabled", currentPage <= 1);
           $("#nextPage").prop("disabled", currentPage >= totalPages);
         }
@@ -242,7 +382,7 @@
           tbody.empty();
 
           if (currentImages.length === 0) {
-            tbody.html('<tr><td colspan="6" class="text-center">No labeled images found.</td></tr>');
+            tbody.html('<tr><td colspan="8" class="text-center">No labeled images found.</td></tr>');
             return;
           }
 
@@ -252,6 +392,8 @@
             const value = image.value === NULL_MARKER ? "" : image.value;
             const adminReview = image.admin_review;
             const status = adminReview ? adminReview.status : null;
+            const labeledBy = image.labeled_by || "unknown";
+            const reviewedBy = adminReview ? (adminReview.reviewed_by || "unknown") : "-";
             
             // Determine row class based on review status
             let rowClass = "review-pending";
@@ -302,6 +444,9 @@
             inputCell.append(input);
             row.append(inputCell);
 
+            // Labeled By
+            row.append($('<td>').text(labeledBy));
+
             // Review status
             const statusCell = $('<td>');
             if (status) {
@@ -315,6 +460,9 @@
               statusCell.append($('<span>').text('Not reviewed').css('color', '#6c757d'));
             }
             row.append(statusCell);
+
+            // Reviewed By
+            row.append($('<td>').text(reviewedBy));
 
             // Actions
             const actionsCell = $('<td>');
@@ -377,12 +525,19 @@
             notSureBtn.removeClass("btn-outline-warning").addClass("btn-warning");
           }
 
-          // Update status badge
-          const statusCell = row.find("td").eq(4); // Updated index for site column
+          // Update status badge (now at index 5)
+          const statusCell = row.find("td").eq(5);
           if (status === "sure") {
             statusCell.html('<span class="badge badge-success review-status-badge">Sure</span>');
           } else {
             statusCell.html('<span class="badge badge-warning review-status-badge">Not Sure</span>');
+          }
+          
+          // Update reviewed_by column (index 6) - will be updated when saved
+          // For now, just mark as pending
+          const reviewedByCell = row.find("td").eq(6);
+          if (reviewedByCell.text() === "-") {
+            reviewedByCell.text("pending");
           }
 
           // Track change with site
@@ -480,6 +635,165 @@
             theme: "relax",
           }).show();
         }
+
+        // User Management
+        let editingUsername = null;
+
+        function loadUsers() {
+          $.ajax({
+            url: "/api/admin/users",
+            method: "GET",
+            success: function(response) {
+              if (response.success) {
+                renderUsers(response.users);
+              }
+            },
+            error: function() {
+              $("#usersTableBody").html('<tr><td colspan="3" class="text-center text-danger">Error loading users</td></tr>');
+            }
+          });
+        }
+
+        function renderUsers(users) {
+          const tbody = $("#usersTableBody");
+          tbody.empty();
+
+          if (users.length === 0) {
+            tbody.html('<tr><td colspan="3" class="text-center">No users found</td></tr>');
+            return;
+          }
+
+          users.forEach(function(user) {
+            const row = $('<tr>');
+            row.append($('<td>').text(user.username));
+            row.append($('<td>').html(user.is_admin ? '<span class="badge badge-success">Yes</span>' : '<span class="badge badge-secondary">No</span>'));
+            
+            const actionsCell = $('<td>');
+            const editBtn = $('<button>')
+              .addClass('btn btn-sm btn-primary mr-1')
+              .text('Edit')
+              .click(function() {
+                editUser(user);
+              });
+            const deleteBtn = $('<button>')
+              .addClass('btn btn-sm btn-danger')
+              .text('Delete')
+              .click(function() {
+                deleteUser(user.username);
+              });
+            actionsCell.append(editBtn).append(deleteBtn);
+            row.append(actionsCell);
+            
+            tbody.append(row);
+          });
+        }
+
+        function editUser(user) {
+          editingUsername = user.username;
+          $("#userUsername").val(user.username).prop('disabled', true);
+          $("#userPassword").val("").attr('placeholder', 'Leave blank to keep existing password');
+          $("#userIsAdmin").prop('checked', user.is_admin);
+          $("#cancelEditBtn").show();
+          $("#userForm button[type='submit']").text('Update User');
+        }
+
+        function cancelEdit() {
+          editingUsername = null;
+          $("#userForm")[0].reset();
+          $("#userUsername").prop('disabled', false);
+          $("#userPassword").attr('placeholder', 'Password');
+          $("#cancelEditBtn").hide();
+          $("#userForm button[type='submit']").text('Save User');
+        }
+
+        $("#userForm").submit(function(e) {
+          e.preventDefault();
+          const username = $("#userUsername").val().trim();
+          const password = $("#userPassword").val();
+          const isAdmin = $("#userIsAdmin").is(':checked');
+
+          if (!username) {
+            showError("Username is required");
+            return;
+          }
+
+          if (!editingUsername && !password) {
+            showError("Password is required for new users");
+            return;
+          }
+
+          const userData = {
+            username: username,
+            is_admin: isAdmin
+          };
+          if (password) {
+            userData.password = password;
+          }
+
+          $.ajax({
+            url: "/api/admin/users",
+            method: "POST",
+            contentType: "application/json",
+            data: JSON.stringify(userData),
+            success: function(response) {
+              if (response.success) {
+                showSuccess("User saved successfully");
+                cancelEdit();
+                loadUsers();
+              } else {
+                showError(response.message || "Failed to save user");
+              }
+            },
+            error: function(xhr) {
+              const message = xhr.responseJSON?.message || "Error saving user";
+              showError(message);
+            }
+          });
+        });
+
+        $("#cancelEditBtn").click(cancelEdit);
+
+        function deleteUser(username) {
+          if (!confirm(`Are you sure you want to delete user "${username}"?`)) {
+            return;
+          }
+
+          $.ajax({
+            url: `/api/admin/users/${username}`,
+            method: "DELETE",
+            success: function(response) {
+              if (response.success) {
+                showSuccess("User deleted successfully");
+                loadUsers();
+              } else {
+                showError(response.message || "Failed to delete user");
+              }
+            },
+            error: function(xhr) {
+              const message = xhr.responseJSON?.message || "Error deleting user";
+              showError(message);
+            }
+          });
+        }
+
+        // Logout handler
+        $("#logoutBtn").click(function() {
+          $.ajax({
+            url: "/logout",
+            method: "POST",
+            success: function() {
+              window.location.href = "/login?next=/admin";
+            },
+            error: function() {
+              window.location.href = "/login?next=/admin";
+            }
+          });
+        });
+
+        // Load users on page load
+        {% if username %}
+        loadUsers();
+        {% endif %}
       });
     </script>
   </body>

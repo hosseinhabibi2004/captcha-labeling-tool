@@ -27,4 +27,4 @@ src/static/labels.json
 
 # Temporary files
 temp/
-results/
+storage/

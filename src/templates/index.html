@@ -1,6 +1,6 @@
 <html>
   <head>
-    <title>CAPTCHA Labeling Tool - Multi-User</title>
+    <title>CAPTCHA Labeling Tool</title>
     <link
       rel="stylesheet"
       href="https://maxcdn.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
@@ -56,7 +56,36 @@
   </head>
   <body>
     <div class="container">
-      <h1 class="mt-5 mb-3">CAPTCHA Labeling Tool - Multi-User</h1>
+      <div class="row mb-3">
+        <div class="col-6">
+          <h1 class="mt-5 mb-3">CAPTCHA Labeling Tool</h1>
+        </div>
+        <div class="col-6 text-right mt-5">
+          {% if username %}
+          <div>
+            <span class="mr-3">Logged in as: <strong>{{ username }}</strong></span>
+            {% if is_admin %}
+            <a href="/admin" class="btn btn-sm btn-primary mr-2">Admin Panel</a>
+            {% endif %}
+            <button id="logoutBtn" class="btn btn-sm btn-outline-secondary">Logout</button>
+          </div>
+          {% else %}
+          <div>
+            <a href="/login" class="btn btn-sm btn-primary">Login</a>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="row mb-3">
+        <div class="col-9">
+          <p>
+            This is a multi-user tool for labeling captcha images. Each user is
+            assigned a bucket of images to label. Images are automatically
+            distributed to prevent duplicates.
+          </p>
+        </div>
+      </div>
 
       <!-- Site Selector -->
       <div class="row mb-3">
@@ -73,41 +102,6 @@
             <option value="">No sites available</option>
             {% endif %}
           </select>
-        </div>
-      </div>
-
-      <!-- Bucket and Progress Info -->
-      <div class="row mb-3">
-        <div class="col-12">
-          <div class="progress-info">
-            {% if bucket %}
-            <div class="bucket-info">
-              Bucket #{{ bucket.id }} - {{ bucket.images|length }} images
-              assigned to you
-            </div>
-            {% else %}
-            <div class="bucket-info text-warning">
-              No bucket assigned. All images may be completed or no images
-              available.
-            </div>
-            {% endif %}
-            <div class="mt-2">
-              <span id="progressText">Loading progress...</span>
-              <span class="saving-indicator" id="savingIndicator">
-                • Saving...</span
-              >
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="row mb-3">
-        <div class="col-9">
-          <p>
-            This is a multi-user tool for labeling captcha images. Each user is
-            assigned a bucket of images to label. Images are automatically
-            distributed to prevent duplicates.
-          </p>
         </div>
       </div>
 
@@ -150,6 +144,31 @@
           <button id="apply" type="button" class="btn btn-lg btn-primary mr-3">
             Apply
           </button>
+        </div>
+      </div>
+
+      <!-- Bucket and Progress Info -->
+      <div class="row mb-3">
+        <div class="col-12">
+          <div class="progress-info">
+            {% if bucket %}
+            <div class="bucket-info">
+              Bucket #{{ bucket.id }} - {{ bucket.images|length }} images
+              assigned to you
+            </div>
+            {% else %}
+            <div class="bucket-info text-warning">
+              No bucket assigned. All images may be completed or no images
+              available.
+            </div>
+            {% endif %}
+            <div class="mt-2">
+              <span id="progressText">Loading progress...</span>
+              <span class="saving-indicator" id="savingIndicator">
+                • Saving...</span
+              >
+            </div>
+          </div>
         </div>
       </div>
 
@@ -768,6 +787,20 @@
 
         $("#refreshPage").click(function() {
           window.location.reload();
+        });
+
+        // Logout handler
+        $("#logoutBtn").click(function() {
+          $.ajax({
+            url: "/logout",
+            method: "POST",
+            success: function() {
+              window.location.href = "/login";
+            },
+            error: function() {
+              window.location.href = "/login";
+            }
+          });
         });
 
         initialize();
